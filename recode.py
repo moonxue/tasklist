@@ -6,18 +6,25 @@
 import datetime
 from pymongo.objectid import ObjectId
 import logging
-from baseHandler import BaseHandler
+from basemodel import BaseModel
 
-class Recode(BaseHandler):
+
+class Recode(BaseModel):
     def __init__(self):
-        BaseHandler.__init__(self)
+        BaseModel.__init__(self)
         self.recode = self.db.recode
+      
+    def check_user_date(self, _id, user):
+        return self.recode.find({"username": user,
+                                  "_id": ObjectId(_id)})
         
-    def update(self, dic):
+        
+    def update(self, dic, user):
         dic = self.preHandler(dic)
         if dic.get("_id","")=="" :
             #写入新数据
             del dic['_id']
+            dic["username"] = user
             dic["date"]=datetime.datetime.utcnow()
             try:
                 self.recode.insert(dic)
@@ -26,6 +33,10 @@ class Recode(BaseHandler):
                 return False 
         else:
             #更新已有数据
+            #检查要更新的数据和当前登录用户的关系
+            if not self.check_user_date(dic['_id'], user):
+                logging.error("no relationship between user and the date!")
+                return False
             dic['_id'] = ObjectId(str(dic.get("_id","")))
             dic['date'] = datetime.datetime.utcnow()
             try:
@@ -35,7 +46,10 @@ class Recode(BaseHandler):
                 return False
         return True
     
-    def finish(self,_id):
+    def finish(self, _id, user):
+        if not self.check_user_date(_id, user):
+            logging.error("no relationship between user and the date!")
+            return False
         try:
             self.recode.update({"_id":ObjectId(str(_id))},{"$set":{"finish":True}})
             return True
@@ -43,7 +57,10 @@ class Recode(BaseHandler):
             logging.error(e)
             return False
         
-    def remove(self,_id):
+    def remove(self,_id, user):
+        if not self.check_user_date(_id, user):
+            logging.error("no relationship between session['user'] and the date!")
+            return False
         try:
             self.recode.remove({"_id":ObjectId(str(_id))})
             return True
@@ -51,9 +68,10 @@ class Recode(BaseHandler):
             logging.error(e)
             return False
         
-    def get(self):
+    def get(self, user):
+        username = user
         #未完成任务
-        _list_task = self.recode.find({"finish":{"$nin":[True]}}).sort("date")
+        _list_task = self.recode.find({"finish":{"$nin":[True]}, 'username':username}).sort("date")
         list_task = []
         for item in _list_task:
             if item['tag'] == u"重要":
@@ -64,7 +82,7 @@ class Recode(BaseHandler):
                 item['tag_class'] = "label label-info"
             list_task.append(item)
         #已完成任务
-        _list_done = self.recode.find({"finish":True}).sort("date")
+        _list_done = self.recode.find({"finish":True,'username':username}).sort("date")
         list_done = []
         for item in _list_done:
             if item['tag'] == u"重要":
